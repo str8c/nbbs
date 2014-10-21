@@ -69,10 +69,14 @@ threadmain_end[] =
 post_submit[] = "Posted. <a href=\"./\">go to thread</a><br><a href=\"../\">go to front page</a>",
 thread_submit[] = "Posted. <a href=\"./\">go to front page</a>",
 
+
+post_omitted[] = "<br>%u posts omitted. <a href=\"%s/\">Click to see all</a><br><br>",
 post_format[] =
     "<div>"
         "<b>%u</b> Name: <b>%s</b> : %s<br>%s"
     "</div>";
+
+
 typedef struct {
     uint32_t time, name, content;
     uint16_t upvotes, downvotes;
@@ -223,14 +227,23 @@ static int addtextencoded(const char **str)
     return r;
 }
 
-static char* homepage(char *str)
+static char* writepost(char *str, int j, POST *p)
 {
-    char *s, tmp[16];
-    int i, j;
+    char *s;
     time_t tm;
 
+    tm = p->time;
+    s = (p->name == ~0) ? "Anonymous" : (text + p->name);
+    str += sprintf(str, post_format, j, s, ctime(&tm), text + p->content);
+
+    return str;
+}
+
+static char* homepage(char *str)
+{
+    char tmp[16];
+    int i, j;
     THREAD *t;
-    POST *p;
 
     str += sprintf(str, home_head);
 
@@ -239,11 +252,16 @@ static char* homepage(char *str)
         sprintf(tmp, "%u", t->id);
         str += sprintf(str, thread_head, i, t->npost, tmp, text + t->title);
 
-        for(j = 0; j != t->npost; j++) {
-            p = &t->post[j];
-            tm = p->time;
-            s = (p->name == ~0) ? "Anonymous" : (text + p->name);
-            str += sprintf(str, post_format, j, s, ctime(&tm), text + p->content);
+        str = writepost(str, 0, &t->post[0]);
+        if(t->npost > 6) {
+            str += sprintf(str, post_omitted, t->npost - 6, tmp);
+            j = t->npost - 5;
+        } else {
+            j = 1;
+        }
+
+        for(; j != t->npost; j++) {
+            str = writepost(str, j, &t->post[j]);
         }
 
         str += sprintf(str, thread_end, tmp);
@@ -257,18 +275,12 @@ static char* threadpage(char *str, THREAD *t)
 {
     char *s;
     int j;
-    time_t tm;
-
-    POST *p;
 
     s = text + t->title;
     str += sprintf(str, threadmain_head, s, s);
 
     for(j = 0; j != t->npost; j++) {
-        p = &t->post[j];
-        tm = p->time;
-        s = (p->name == ~0) ? "Anonymous" : (text + p->name);
-        str += sprintf(str, post_format, j, s, ctime(&tm), text + p->content);
+        str = writepost(str, j, &t->post[j]);
     }
 
     str += sprintf(str, threadmain_end);
