@@ -1,6 +1,12 @@
 #include "../nhttp/nhttp.h"
 #include <time.h>
 
+/* TODO:
+-auto redirect when posting
+-only show 5 recent replies to threads on main page
+-thread catalog
+*/
+
 static const char
 home_head[] =
     "<head>"
@@ -36,7 +42,7 @@ thread_end[] =
     "<br>"
     "<form method=\"post\" action=\"%s/post\">"
     "Name: <input type=\"text\" name=\"n\">"
-    "<label><input type=\"checkbox\" name=\"db\">Don't bump </label>"
+    "<label><input type=\"checkbox\" name=\"d\">Don't bump </label>"
     "<input type=\"submit\" value=\"Reply\"><br>"
     "<textarea cols=\"64\" rows=\"5\" name=\"p\"></textarea>"
     "</form>"
@@ -47,20 +53,21 @@ threadmain_head[] =
     "<title>%s</title>"
     "</head>"
     "<body bgcolor=\"white\">"
+    "<a href=\"../\">back</a><br>"
     "<b>%s</b><br>",
 
 threadmain_end[] =
     "<br>"
     "<form method=\"post\" action=\"post\">"
     "Name: <input type=\"text\" name=\"n\">"
-    "<label><input type=\"checkbox\" name=\"db\">Don't bump </label>"
+    "<label><input type=\"checkbox\" name=\"d\">Don't bump </label>"
     "<input type=\"submit\" value=\"Reply\"><br>"
     "<textarea cols=\"64\" rows=\"5\" name=\"p\"></textarea>"
     "</form>"
     "</body>",
 
-post_submit[] = "Posted. <a href=\"./\">go back to thread</a><br><a href=\"../\">go to homepage</a>",
-thread_submit[] = "Posted. <a href=\"./\">go to homepage</a>",
+post_submit[] = "Posted. <a href=\"./\">go to thread</a><br><a href=\"../\">go to front page</a>",
+thread_submit[] = "Posted. <a href=\"./\">go to front page</a>",
 
 post_format[] =
     "<div>"
@@ -72,7 +79,7 @@ typedef struct {
 } POST;
 
 typedef struct {
-    uint32_t id, title, npost, unused;
+    uint32_t id, title, npost, bumptime;
     POST post[255];
 } THREAD;
 
@@ -93,6 +100,13 @@ static void commit_text(char *base)
     fclose(file);
 }
 
+static void insert(THREAD *t)
+{
+    memmove(thread + 1, thread, nthread * sizeof(*thread));
+    thread[0] = t;
+    nthread++;
+}
+
 static void commit_thread(THREAD *t)
 {
     FILE *file;
@@ -103,22 +117,43 @@ static void commit_thread(THREAD *t)
     }
 
     fwrite(t, 1, sizeof(THREAD), file);
-    thread[nthread++] = t;
+    insert(t);
 }
 
-static THREAD* threadbyid(int id)
+static THREAD** threadbyid(int id)
 {
     int i;
-    THREAD *t;
 
     for(i = 0; i != nthread; i++) {
-        t = thread[i];
-        if(t->id == id) {
-            return t;
+        if(thread[i]->id == id) {
+            return &thread[i];
         }
     }
 
     return NULL;
+}
+
+static void bump(THREAD *t, THREAD **tp, uint32_t time)
+{
+    memmove(thread + 1, thread, (tp - thread) * sizeof(*thread));
+    thread[0] = t;
+    t->bumptime = time;
+}
+
+static void insertload(THREAD *t)
+{
+    int i;
+
+    for(i = 0; i < nthread; i++) {
+        if(t->bumptime > thread[i]->bumptime) {
+            /* insert */
+            memmove(thread + i + 1, thread + i, (nthread - i) * sizeof(*thread));
+            thread[i] = t;
+            nthread++;
+            return;
+        }
+    }
+    thread[nthread++] = t;
 }
 
 static int tohex(char ch)
@@ -245,7 +280,9 @@ int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
     char *str;
     int i;
     int name, title, text;
-    THREAD *t;
+    bool dontbump;
+    uint32_t ctime;
+    THREAD *t, **tp;
     POST *p;
     FILE *file;
 
@@ -283,12 +320,15 @@ int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
             return -1;
         }
 
+        ctime = time(NULL);
+
         t = malloc(sizeof(THREAD));
         t->id = nthread;
         t->title = title;
         t->npost = 1;
+        t->bumptime = ctime;
         p = &t->post[0];
-        p->time = time(NULL);
+        p->time = ctime;
         p->name = name;
         p->content = text;
         p->upvotes = 0;
@@ -306,12 +346,14 @@ int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
         return -1;
     }
 
-    if(!(t = threadbyid(i))) {
+    if(!(tp = threadbyid(i))) {
         return -1;
     }
+    t = *tp;
 
     if(post && !strcmp(str, "post")) {
         name = text = -1;
+        dontbump = 0;
         str = textp;
         while(*post) {
             if(*post == 'n') {
@@ -324,6 +366,9 @@ int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
                 if(text < 0) {
                     return -1;
                 }
+            } else if(*post == 'd') {
+                dontbump = 1;
+                while(*post && *post++ != '&');
             } else {
                 break;
             }
@@ -336,8 +381,12 @@ int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
 
         commit_text(str);
 
+        ctime = time(NULL);
+        if(!dontbump) {
+            bump(t, tp, ctime);
+        }
         p = &t->post[t->npost++];
-        p->time = time(NULL);
+        p->time = ctime;
         p->name = name;
         p->content = text;
         p->upvotes = 0;
@@ -348,9 +397,11 @@ int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
             //fatal error
         }
 
+        /* write npost + bumptime */
         fseek(file, i * sizeof(THREAD) + 8, SEEK_SET);
-        fwrite(&t->npost, 1, 4, file);
+        fwrite(&t->npost, 1, 8, file);
 
+        /* write the post itself */
         fseek(file, i * sizeof(THREAD) + sizeof(POST) * t->npost, SEEK_SET); //t->npost + 1 intentional
         fwrite(p, 1, sizeof(POST), file);
         fclose(file);
@@ -381,7 +432,7 @@ void __attribute__ ((constructor)) init(void)
                 break;
             }
 
-            thread[nthread++] = t;
+            insertload(t);
         } while(1);
         free(t);
         fclose(file);
