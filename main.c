@@ -287,7 +287,7 @@ static char* threadpage(char *str, THREAD *t)
     return str;
 }
 
-int getpage(PAGEINFO *data, const char *path, const char *post, int postlen)
+int export(nbbs, getpage)(PAGEINFO *data, const char *path, const char *post, int postlen)
 {
     char *str;
     int i;

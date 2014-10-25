@@ -1,12 +1,9 @@
-#include <string.h>
+#include "../../nhttp/nhttp.h"
 
-char* getlibname(char *dest, char *path, char *host)
+import(nbbs);
+
+char* getconfig(GETPAGE **getpage, char *path, char *host)
 {
-    if(!memcmp(path, "talk/", 5)) {
-        strcpy(dest, "./nbbs.so");
-        return path + 5;
-    } else {
-        strcpy(dest, "./static.so");
-        return path;
-    }
+    *getpage = nbbs_getpage;
+    return path;
 }
