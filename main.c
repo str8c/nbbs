@@ -364,6 +364,10 @@ int export(nbbs, getpage)(PAGEINFO *data, const char *path, const char *post, in
     t = *tp;
 
     if(post && !strcmp(str, "post")) {
+        if(t->npost == sizeof(t->post) / sizeof(*t->post)) {
+            return -1;
+        }
+
         name = text = -1;
         dontbump = 0;
         str = textp;
