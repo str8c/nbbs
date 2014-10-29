@@ -390,7 +390,7 @@ int export(nbbs, getpage)(PAGEINFO *data, const char *path, const char *post, in
             }
         }
 
-        if(name == -2 || text < 0) {
+        if(name == -2 || text < 0 || (textp - str) > 256) {
             textp = str;
             return -1;
         }
