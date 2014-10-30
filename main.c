@@ -208,6 +208,11 @@ static int addtextencoded(const char **str)
                     *textp++ = ';';
                     continue;
                 }
+
+                if(ch == '\n') {
+                    *textp++ = '<'; *textp++ = 'b'; *textp++ = 'r'; *textp++ = '>';
+                    continue;
+                }
             }
         }
 
