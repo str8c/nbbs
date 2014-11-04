@@ -17,6 +17,7 @@ home_head[] =
     "padding:5px;"
     "margin-top:7px;"
     "display:block;"
+    "word-wrap:break-word;"
     "}"
     "</style>"
     "</head>"
